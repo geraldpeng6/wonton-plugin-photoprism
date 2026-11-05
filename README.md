@@ -1,11 +1,17 @@
-# 云吞插件模板
+# 云吞插件：PhotoPrism
 
-云吞（Wonton）的插件就是一个 `docker-compose.yml`，顶层多一个 `x-wonton` 字段，写明插件在云吞里的身份、网页入口和要的
-权限。一个插件一个 Git 仓库，仓库根目录就是插件包，发布就是打 tag。用户在 App 里装上插件，核心按清单起容器、接好登录，
-插件的网页在 App 里作为小程序打开。
+PhotoPrism（[photoprism.app](https://www.photoprism.app)，AGPL-3.0）是自托管相册：按时间、人物和画面内容
+整理、浏览、搜索照片。这个插件把它装进云吞：照片读共享文件夹 photos（只读），索引和缓存放在插件自己的数据目录里，
+网页经核心网关打开，应用自己不设登录，打开就能用。
 
-这个仓库是模板：一个能装上的示例插件（nginx 显示一个向用户问好的网页），加上检查、开发环境和发布三个脚本。从这个模板
-新建仓库，照着下面把示例换成你的应用。
+插件用上游官方镜像 `photoprism/photoprism`（社区版），按摘要固定。单用户场景用 SQLite（上游兼容列表里有，也是
+镜像的默认驱动），不额外起数据库。
+
+## 图标来源与许可
+
+`icon.svg` 取自 PhotoPrism 官方标志（photoprism.app 的 logo.svg），原样使用，只加了白色底和 `viewBox`；来源、版权、
+商标说明见 [NOTICE](NOTICE)。该标志为 PhotoPrism UG 的商标，仅用于识别本插件所集成的应用；本插件不代表
+PhotoPrism 官方，也不表示获得 PhotoPrism 的合作、认可或背书。
 
 ## 准备
 
@@ -40,7 +46,7 @@ scripts/dev.sh install
 | 路径 | 内容 |
 | --- | --- |
 | `docker-compose.yml` | 插件本身：compose 加上 `x-wonton` 清单 |
-| `icon.svg`、`web/` | 清单和 compose 引用的文件：图标、交给容器的配置和网页 |
+| `icon.svg` | 清单引用的文件：图标 |
 | `screenshots/` | 商店详情页里的截图 |
 | `scripts/check.sh` | 检查插件包，规则和安装时一样 |
 | `scripts/dev.sh` | 开发环境：起一套云吞，装、重装、卸载插件，看日志 |

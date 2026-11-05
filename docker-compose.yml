@@ -1,61 +1,88 @@
-# 示例插件：nginx 显示一个网页，向登录的人问好。照着 README 的“写插件”换成你的应用。
+# PhotoPrism 相册：照片读共享文件夹 photos（只读），索引、缩略图和人脸数据都在插件数据目录。
+# 应用自己不设登录（上游公共模式），网页只经核心网关进来；不申请出网，相册功能都在本地。
 services:
-  web:
-    # 镜像按摘要固定（多架构镜像写清单列表的摘要），标签只给人看。
-    image: nginx:1.30.6-alpine@sha256:0e52bd054126cdc040b1276c0af347aeb02a41b9cfe305d6094767ac30e97949
-    # 包里的文件经 configs 交给容器（核心在启动前写进去），不能用卷挂载。
-    configs:
-      - source: site
-        target: /etc/nginx/conf.d/default.conf
-      - source: page
-        target: /usr/share/nginx/html/index.html
+  photoprism:
+    # 上游官方镜像（社区版），标签对应上游 261029-963b58c50 发布版，amd64 和 arm64 都有。
+    image: photoprism/photoprism:261029@sha256:9409cf8e5a6ebcbe3170d14537556cbc20997aaa307096d6eeedbfc5eeef6719
+    # 不写 user:：镜像入口以 root 建账号、把存储目录交给传入的 PUID:PGID，再用 setpriv 降权跑服务进程，
+    # 宿主上的数据文件归用户的用户。降权前只动 /photoprism/storage，不碰只读的 originals。
+    environment:
+      # 插值变量不会自动进容器环境：显式交给入口脚本，服务进程 setpriv 降权到宿主用户、时区正确。
+      TZ: ${TZ}
+      PHOTOPRISM_UID: ${PUID}
+      PHOTOPRISM_GID: ${PGID}
+      # 关掉应用自己的登录（上游"公共模式"，访客拥有管理员权限）：装好即用，不再多一次登录；
+      # 唯一的门是核心网关的会话校验，匿名请求到不了应用。
+      PHOTOPRISM_AUTH_MODE: "public"
+      # 网关转发的是 HTTP，跳过上游默认的自签 TLS 证书初始化（容器不做 TLS）。
+      PHOTOPRISM_INIT: ""
+      # 网页的公开地址，应用生成外链时用。
+      PHOTOPRISM_SITE_URL: ${WONTON_APP_URL}/
+      # 上游默认 en，且后端加载后压过浏览器语言探测（实测）：预置简体中文，用户仍可在设置里切换。
+      PHOTOPRISM_DEFAULT_LOCALE: "zh"
+      # 登录已关，这个密码没有登录入口可用；设它只是别让（已禁用的）admin 用上游公开的默认密码 "photoprism"。
+      PHOTOPRISM_ADMIN_PASSWORD: ${WONTON_SECRET_ADMIN_PASSWORD}
+      # originals 只读挂载：关掉一切要写 originals 的功能（上传、导入、WebDAV）。
+      PHOTOPRISM_READONLY: "true"
+      PHOTOPRISM_DISABLE_WEBDAV: "true"
+      # places 的反向地理编码调用上游托管服务 places.photoprism.app，会把 GPS 坐标发给第三方；
+      # 插件不出网，关掉它：地点/地图不可用，其余功能不受影响（要开就加 network.egress 并删掉这行）。
+      PHOTOPRISM_DISABLE_PLACES: "true"
+      # 上游兼容 SQLite 和 MariaDB 10.5.12+；单用户、无并发的场景用 SQLite（镜像默认驱动），省一个数据库容器。
+      PHOTOPRISM_DATABASE_DRIVER: "sqlite"
+    volumes:
+      # 照片只读：共享文件夹以 :ro 挂进上游约定的 originals 路径。
+      - ${WONTON_SHARE_PHOTOS}:/photoprism/originals:ro
+      # 索引数据库（SQLite）、缩略图缓存和 sidecar 备份都在插件数据目录里，重装不丢。
+      - ${WONTON_APP_DATA}/storage:/photoprism/storage
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      # /api/v1/config 在应用就绪、数据库打开后才返回 200 的配置 JSON。
+      test: ["CMD", "curl", "--silent", "--show-error", "--fail", "http://127.0.0.1:2342/api/v1/config"]
       interval: 30s
       timeout: 5s
-      start_period: 30s
-      start_interval: 1s
-
-configs:
-  site:
-    file: web/default.conf
-  page:
-    file: web/index.html
+      retries: 5
+      start_period: 120s
+      start_interval: 5s
 
 x-wonton:
   spec: "0.4"
-  # 换成你自己的：反向域名形式，装上以后不能改。
-  id: app.example.hello
-  version: 0.1.1
+  id: app.photoprism.photoprism
+  version: 0.1.0
   kind: app
-  title: { zh: 你好, en: Hello }
-  description: { zh: 向登录的人问好的示例网页, en: An example page that greets whoever is signed in }
+  title: { en: PhotoPrism }
+  description:
+    zh: 把共享文件夹里的照片整理成可搜索的相册
+    en: Turn the photos in your shared folder into a searchable library
   icon: icon.svg
   notices: [NOTICE]
-  screenshots: [screenshots/home.png]
-  author: { name: Example }
-  homepage: https://nginx.org
-  # 应用（这里是 nginx）的许可证；插件包自己的许可证写在仓库的 LICENSE 里。
-  license: BSD-2-Clause
+  screenshots: [screenshots/library.png]
+  author: { name: geraldpeng6, url: https://github.com/geraldpeng6 }
+  homepage: https://www.photoprism.app
+  # 上游应用的许可证；插件包自己的许可证写在仓库的 LICENSE 里。
+  license: AGPL-3.0-only
   tags:
-    zh: [工具]
-    en: [Tools]
+    zh: [相册]
+    en: [Photos]
   about:
     zh: |
-      一个示例网页：登录以后，页面会向你问好。新建插件时可以照着改。
+      把共享文件夹里的照片整理成自己的相册：按时间、人物和画面内容浏览、搜索；在网页里点一下索引，新照片就进时间线。
+
+      应用自己不设登录，由云吞登录挡在前面，打开就能用。照片文件只读，不会被改动。
     en: |
-      An example page: once you are signed in, the page says hello. Copy it as a starting point for a new plugin.
-  release_notes: { zh: 名字和说明更新。, en: Product name and description update. }
+      Turn the photos in your shared folder into your own library: browse and search by time, people and subject. One click to index, and new photos join the timeline.
+
+      The app has no login of its own; Wonton's sign-in stands in front of it, so opening the page is enough. Photo files are read-only and never modified.
+  release_notes: { zh: 首个版本。, en: First release. }
   webui:
-    service: web
-    port: 80
-    # 应用不认 OIDC 时，由网关在请求上加上用户名（README 的“网页入口和登录”）。
-    sso: proxy
-    proxy:
-      headers:
-        Remote-User: "{user}"
-  permissions: []
-  # 上游 nginx 官方镜像，amd64 和 arm64 都有；上游没写最低内存，按本机空闲实测取整（实测约 24M，取 64M）。
+    service: photoprism
+    port: 2342
+    sso: none
+  secrets:
+    admin_password:
+      generate: { bytes: 32 }
+  permissions:
+    - storage.share.photos:read
+  # 上游官方镜像，amd64 和 arm64 都有（Docker Hub 清单）；上游要求至少 3 GB 内存（1 GB 及以下自动关掉 RAW 转换和人脸识别）。
   requirements:
     arch: [amd64, arm64]
-    memory: 64M
+    memory: 3G
