@@ -1,29 +1,23 @@
 图标
 ====
 
-`icon.svg` 为本仓库原创，按插件规范的线条风格手写，未用图片模型生成。从模板新建的插件换成自己的图标时，这里按实际情况重写。
+`icon.svg` 取自 PhotoPrism 官方标志（https://www.photoprism.app/static/icons/logo.svg ，2026-11 下载），
+原样使用：只加了白色底（标志四角透明，按插件规范补满正方形）和 `viewBox`，未改色、未变形。标志为矢量
+文件，未用图片模型生成。
 
-许可证
+PhotoPrism® 和标志是 PhotoPrism UG 的商标，按其《Trademark and Brand Guidelines》
+（https://www.photoprism.app/trademark ）作指代使用，仅用于识别本插件所集成的应用；本插件不代表
+PhotoPrism 官方，也不表示获得 PhotoPrism 的合作、认可或背书。标志的版权归 PhotoPrism UG 所有，
+不随本仓库的许可证分发。
+
+应用
+----
+
+本插件打包上游官方镜像 `photoprism/photoprism`（未修改、按摘要固定），应用是 PhotoPrism（社区版），
+许可证 AGPL-3.0，全文见 https://docs.photoprism.app/license/agpl/ 。插件不复制、不修改、不再分发
+上游代码。
+
+插件包
 ------
 
-MIT License
-
-Copyright (c) 2026 Wonton plugin authors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+本插件包（compose、图标、清单和脚本）按仓库根目录的 LICENSE（MIT）分发。
