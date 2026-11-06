@@ -1,4 +1,5 @@
 # scripts/smoke.sh 的一项一项探测，跟着插件走。没写的项会 FAIL 并给出写法，不会默认放行。
+# shellcheck shell=bash disable=SC2034
 #
 # 页面：web_assert 从标准输入读页面，命中的确是应用的真实页面时返回 0。
 # 身份：identity_check 用应用自己的"当前用户"接口断言认出的是用户管理员。没有用户体系时写 IDENTITY_NA=1，
@@ -8,8 +9,6 @@
 # 装之前要准备（如先配出口代理）：写 before_install。
 
 # PhotoPrism：sso=none，应用自己不设登录（上游公共模式，访客即管理员），网页只经核心网关；清单没有 mcp。
-SSO=none
-MCP=0
 
 web_assert() { grep -qi 'photoprism'; }   # 标准输入：应用页面
 
