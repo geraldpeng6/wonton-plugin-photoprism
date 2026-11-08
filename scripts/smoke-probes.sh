@@ -54,7 +54,9 @@ data_write() {
   file="wonton-smoke-$marker.jpg"
   mkdir -p "$(photoprism_share)" || { echo "建不了共享目录 $(photoprism_share)"; return 1; }
   printf '%s' "$PP_JPEG_BASE64" | base64 -d >"$(photoprism_share)/$file" || { echo "写不了标记图片"; return 1; }
-  pp_api /api/v1/index -X POST >/dev/null || { echo "触发索引失败"; return 1; }
+  local idx
+  idx="$(pp_api /api/v1/index -X POST)" || { echo "触发索引失败：$idx"; return 1; }
+  echo "索引完成：$(head -c 200 <<<"$idx")"
   # 索引是后台跑的：轮询搜索直到标记图入库（最多 120 秒）。
   local i found=""
   for i in $(seq 1 60); do
