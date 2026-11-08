@@ -15,15 +15,24 @@ web_assert() { grep -qi 'photoprism'; }   # 标准输入：应用页面
 identity_check() { # 应用没有用户体系，"身份"就是只放行过了网关的请求：匿名请求被网关拒之门外，
   # 网页端口不开在局域网上，带用户会话进来的是应用自己的配置（公共模式生效）。
   local code ports page
-  code="$(curl -sS --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 60 "$SMOKE_WEB_URL/api/v1/config")" ||
+  code="$(curl -sS --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 60 "${SMOKE_WEB_URL%/}/api/v1/config")" ||
     { echo "匿名请求失败：$code"; return 1; }
   [[ "$code" == "401" ]] || { echo "匿名 API 不是 401：$code"; return 1; }
   ports="$(docker inspect --format '{{json .HostConfig.PortBindings}}' \
     "wonton-$SMOKE_INSTANCE--$SMOKE_SLUG--photoprism" 2>/dev/null)" ||
     { echo "找不到插件容器"; return 1; }
-  [[ "$ports" == "{}" ]] || { echo "插件容器发布了宿主端口：$ports"; return 1; }
-  page="$(web_get /api/v1/config)" || { echo "带会话取 /api/v1/config 失败：$page"; return 1; }
+  # 没发布端口时 PortBindings 是 null（不是 {}）
+  [[ "$ports" == "{}" || "$ports" == "null" ]] || { echo "插件容器发布了宿主端口：$ports"; return 1; }
+  page="$(pp_api /api/v1/config)" || { echo "带会话取 /api/v1/config 失败：$page"; return 1; }
   grep -q '"siteUrl"' <<<"$page" || { echo "应用配置没取到：$(head -c 150 <<<"$page")"; return 1; }
+}
+
+probe_url() { printf '%s' "${SMOKE_WEB_URL%/}"; } # 套件给的 web_url 带尾斜杠，拼路径前归一化
+
+pp_api() { # <路径> [curl 参数…]：带会话走网关调应用 API（网关把关匿名请求）
+  local path="$1"
+  shift
+  curl -sS --noproxy '*' --max-time 120 --fail-with-body -b "${SMOKE_JAR:-}" "$@" "$(probe_url)$path"
 }
 
 marker_file() { # SMOKE_STATE 在套件里是状态目录（e2e 传的是标记文件本身），标记放对应路径
@@ -45,11 +54,11 @@ data_write() {
   file="wonton-smoke-$marker.jpg"
   mkdir -p "$(photoprism_share)" || { echo "建不了共享目录 $(photoprism_share)"; return 1; }
   printf '%s' "$PP_JPEG_BASE64" | base64 -d >"$(photoprism_share)/$file" || { echo "写不了标记图片"; return 1; }
-  web_get /api/v1/index -X POST >/dev/null || { echo "触发索引失败"; return 1; }
+  pp_api /api/v1/index -X POST >/dev/null || { echo "触发索引失败"; return 1; }
   # 索引是后台跑的：轮询搜索直到标记图入库（最多 120 秒）。
   local i found=""
   for i in $(seq 1 60); do
-    resp="$(web_get "/api/v1/photos?count=200&q=wonton-smoke-$marker")" || { resp=""; sleep 2; continue; }
+    resp="$(pp_api "/api/v1/photos?count=200&q=wonton-smoke-$marker")" || { resp=""; sleep 2; continue; }
     found="$(jq -r --arg f "$file" '[.[] | select(.FileName == $f)][0].UID // empty' <<<"$resp" 2>/dev/null)" || found=""
     [[ -n "$found" ]] && break
     sleep 2
@@ -62,7 +71,7 @@ data_check() {
   local file resp
   file="$(jq -r '.file // empty' "$(marker_file)" 2>/dev/null)" || true
   [[ -n "$file" ]] || { echo "没有 data_write 留下的标记"; return 1; }
-  resp="$(web_get "/api/v1/photos?count=200&q=wonton-smoke-${file#wonton-smoke-}")" ||
+  resp="$(pp_api "/api/v1/photos?count=200&q=wonton-smoke-${file#wonton-smoke-}")" ||
     { echo "搜索失败：$resp"; return 1; }
   jq -e --arg f "$file" 'any(.[]; .FileName == $f)' <<<"$resp" >/dev/null ||
     { echo "升级/重装后搜不到标记图 $file：$(head -c 300 <<<"$resp")"; return 1; }
