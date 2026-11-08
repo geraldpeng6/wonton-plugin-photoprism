@@ -58,10 +58,10 @@ data_write() {
   idx="$(pp_api /api/v1/index -X POST -H 'Content-Type: application/json' -d '{}')" ||
     { echo "触发索引失败：$idx"; return 1; }
   echo "索引完成：$(head -c 200 <<<"$idx")"
-  # 索引是后台跑的：轮询搜索直到标记图入库（最多 120 秒）。
+  # 索引是后台跑的：轮询列表按文件名本地匹配（q 是全文搜，不吃文件名）。
   local i found=""
   for i in $(seq 1 60); do
-    resp="$(pp_api "/api/v1/photos?count=200&q=wonton-smoke-$marker")" || { resp=""; sleep 2; continue; }
+    resp="$(pp_api "/api/v1/photos?count=200")" || { resp=""; sleep 2; continue; }
     found="$(jq -r --arg f "$file" '[.[] | select(.FileName == $f)][0].UID // empty' <<<"$resp" 2>/dev/null)" || found=""
     [[ -n "$found" ]] && break
     sleep 2
@@ -74,7 +74,7 @@ data_check() {
   local file resp
   file="$(jq -r '.file // empty' "$(marker_file)" 2>/dev/null)" || true
   [[ -n "$file" ]] || { echo "没有 data_write 留下的标记"; return 1; }
-  resp="$(pp_api "/api/v1/photos?count=200&q=wonton-smoke-${file#wonton-smoke-}")" ||
+  resp="$(pp_api "/api/v1/photos?count=200")" ||
     { echo "搜索失败：$resp"; return 1; }
   jq -e --arg f "$file" 'any(.[]; .FileName == $f)' <<<"$resp" >/dev/null ||
     { echo "升级/重装后搜不到标记图 $file：$(head -c 300 <<<"$resp")"; return 1; }
