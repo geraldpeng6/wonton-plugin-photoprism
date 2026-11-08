@@ -25,3 +25,45 @@ identity_check() { # 应用没有用户体系，"身份"就是只放行过了网
   page="$(web_get /api/v1/config)" || { echo "带会话取 /api/v1/config 失败：$page"; return 1; }
   grep -q '"siteUrl"' <<<"$page" || { echo "应用配置没取到：$(head -c 150 <<<"$page")"; return 1; }
 }
+
+marker_file() { # SMOKE_STATE 在套件里是状态目录（e2e 传的是标记文件本身），标记放对应路径
+  if [[ -d "$SMOKE_STATE" ]]; then printf '%s' "$SMOKE_STATE/photoprism-marker"; else printf '%s' "${SMOKE_STATE}.marker"; fi
+}
+
+# 数据：相册库就是用户数据（索引库在插件数据目录，重装保留；照片本体在只读的 photos 共享目录）。
+# data_write 往共享目录放一张内容带标记的小图（1×1 JPEG，应用只读不改），调应用自己的索引接口收进库，
+# data_check 重装/升级后还能搜到它。
+PP_JPEG_BASE64='/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCABAAEADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwC/RRRXx59sFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAf//Z'
+
+photoprism_share() { # 共享目录在宿主上的位置（核心把共享挂在状态目录的 data/shares 下）
+  printf '%s/data/shares/photos' "$SMOKE_STATE"
+}
+
+data_write() {
+  local marker file resp
+  marker="$(od -An -N4 -tx4 /dev/urandom | tr -d ' \n')"
+  file="wonton-smoke-$marker.jpg"
+  mkdir -p "$(photoprism_share)" || { echo "建不了共享目录 $(photoprism_share)"; return 1; }
+  printf '%s' "$PP_JPEG_BASE64" | base64 -d >"$(photoprism_share)/$file" || { echo "写不了标记图片"; return 1; }
+  web_get /api/v1/index -X POST >/dev/null || { echo "触发索引失败"; return 1; }
+  # 索引是后台跑的：轮询搜索直到标记图入库（最多 120 秒）。
+  local i found=""
+  for i in $(seq 1 60); do
+    resp="$(web_get "/api/v1/photos?count=200&q=wonton-smoke-$marker")" || { resp=""; sleep 2; continue; }
+    found="$(jq -r --arg f "$file" '[.[] | select(.FileName == $f)][0].UID // empty' <<<"$resp" 2>/dev/null)" || found=""
+    [[ -n "$found" ]] && break
+    sleep 2
+  done
+  [[ -n "$found" ]] || { echo "索引 120 秒后还没收进标记图 $file：$(head -c 200 <<<"$resp")"; return 1; }
+  jq -nc --arg f "$file" '{file:$f}' >"$(marker_file)"
+}
+
+data_check() {
+  local file resp
+  file="$(jq -r '.file // empty' "$(marker_file)" 2>/dev/null)" || true
+  [[ -n "$file" ]] || { echo "没有 data_write 留下的标记"; return 1; }
+  resp="$(web_get "/api/v1/photos?count=200&q=wonton-smoke-${file#wonton-smoke-}")" ||
+    { echo "搜索失败：$resp"; return 1; }
+  jq -e --arg f "$file" 'any(.[]; .FileName == $f)' <<<"$resp" >/dev/null ||
+    { echo "升级/重装后搜不到标记图 $file：$(head -c 300 <<<"$resp")"; return 1; }
+}
