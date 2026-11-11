@@ -1,6 +1,6 @@
 # 云吞插件：PhotoPrism
 
-开发流程见[插件开发指南](https://github.com/geraldpeng6/wonton-docs/blob/main/develop.md)。
+开发流程见[插件开发指南](https://github.com/wontonapp/wonton-docs/blob/main/develop.md)。
 
 PhotoPrism（[photoprism.app](https://www.photoprism.app)，AGPL-3.0）是自托管相册：按时间、人物和画面内容
 整理、浏览、搜索照片。这个插件把它装进云吞：照片读共享文件夹 photos（只读），索引和缓存放在插件自己的数据目录里，
