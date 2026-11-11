@@ -49,10 +49,10 @@ x-wonton:
   id: app.photoprism.photoprism
   version: 0.1.0
   kind: app
-  title: { en: PhotoPrism }
+  title: { zh: 硬盘照片相册（PhotoPrism）, en: Photo Library Browser (PhotoPrism) }
   description:
-    zh: 把共享文件夹里的照片整理成可搜索的相册
-    en: Turn the photos in your shared folder into a searchable library
+    zh: 把已经存在共享文件夹里的照片整理成能搜的相册：按时间、人物和画面内容找，原文件一点不动。适合照片早就存在硬盘里、只想翻着看的人。
+    en: "Turns the photos already in your shared folders into a searchable album: find them by date, people or what's in the picture, with the originals left untouched. For photos that already sit on a drive and just need browsing."
   icon: icon.svg
   notices: [NOTICE]
   screenshots: [screenshots/library.png]
