@@ -35,25 +35,26 @@ pp_api() { # <路径> [curl 参数…]：带会话走网关调应用 API（网�
   curl -sS --noproxy '*' --max-time 120 --fail-with-body -b "${SMOKE_JAR:-}" "$@" "$(probe_url)$path"
 }
 
-marker_file() { # SMOKE_STATE 在套件里是状态目录（e2e 传的是标记文件本身），标记放对应路径
-  if [[ -d "$SMOKE_STATE" ]]; then printf '%s' "$SMOKE_STATE/photoprism-marker"; else printf '%s' "${SMOKE_STATE}.marker"; fi
-}
-
 # 数据：相册库就是用户数据（索引库在插件数据目录，重装保留；照片本体在只读的 photos 共享目录）。
 # data_write 往共享目录放一张内容带标记的小图（64×64 JPEG，应用只读不改），调应用自己的索引接口收进库，
 # data_check 重装/升级后还能搜到它。
 PP_JPEG_BASE64='/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCABAAEADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwC/RRRXx59sFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAf//Z'
 
-photoprism_share() { # 共享目录在宿主上的位置（核心把共享挂在状态目录的 data/shares 下）
-  printf '%s/data/shares/photos' "$SMOKE_STATE"
+photoprism_share() { # 共享目录在核心容器里的路径（宿主上在数据目录的 shares/photos，:ro 挂进应用容器）
+  printf '%s/shares/photos' "$SMOKE_DATA_DIR"
 }
 
 data_write() {
-  local marker file resp
+  local marker file tmp resp
   marker="$(od -An -N4 -tx4 /dev/urandom | tr -d ' \n')"
   file="wonton-smoke-$marker.jpg"
-  mkdir -p "$(photoprism_share)" || { echo "建不了共享目录 $(photoprism_share)"; return 1; }
-  printf '%s' "$PP_JPEG_BASE64" | base64 -d >"$(photoprism_share)/$file" || { echo "写不了标记图片"; return 1; }
+  # 探针拿不到宿主路径：图片经核心容器放进去（共享目录在核心的数据目录里，应用容器只读挂同一目录）。
+  docker exec "$SMOKE_CORE" mkdir -p "$(photoprism_share)" ||
+    { echo "建不了共享目录 $(photoprism_share)"; return 1; }
+  tmp="$(mktemp)"
+  printf '%s' "$PP_JPEG_BASE64" | base64 -d >"$tmp" || { rm -f "$tmp"; echo "解码不了标记图片"; return 1; }
+  docker cp "$tmp" "$SMOKE_CORE:$(photoprism_share)/$file" || { rm -f "$tmp"; echo "写不了标记图片"; return 1; }
+  rm -f "$tmp"
   local idx
   idx="$(pp_api /api/v1/index -X POST -H 'Content-Type: application/json' -d '{}')" ||
     { echo "触发索引失败：$idx"; return 1; }
@@ -67,12 +68,12 @@ data_write() {
     sleep 2
   done
   [[ -n "$found" ]] || { echo "索引 120 秒后还没收进标记图 $file：$(head -c 200 <<<"$resp")"; return 1; }
-  jq -nc --arg f "$file" '{file:$f}' >"$(marker_file)"
+  jq -nc --arg f "$file" '{file:$f}' >"$SMOKE_STATE"
 }
 
 data_check() {
   local file resp
-  file="$(jq -r '.file // empty' "$(marker_file)" 2>/dev/null)" || true
+  file="$(jq -r '.file // empty' "$SMOKE_STATE" 2>/dev/null)" || true
   [[ -n "$file" ]] || { echo "没有 data_write 留下的标记"; return 1; }
   resp="$(pp_api "/api/v1/photos?count=200")" ||
     { echo "搜索失败：$resp"; return 1; }
